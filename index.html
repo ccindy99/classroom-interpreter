@@ -309,7 +309,7 @@ details[open] summary{margin-bottom:8px}
   const seen = new Set();
   const recent = [];
   // ---------- 소리로 읽어 주기 (브라우저 음성 합성) ----------
-  const canSpeak = "speechSynthesis" in window;
+  const canSpeak = "speechSynthesis" in window;  // 기기 음성 합성 지원 여부
   let ttsOn = false, ruVoice = null, koVoice = null, ttsPausedRec = false;
   function pickVoices() {
     const vs = speechSynthesis.getVoices();
@@ -317,8 +317,39 @@ details[open] summary{margin-bottom:8px}
     ruVoice = best(/^ru/i); koVoice = best(/^ko/i);
   }
   if (canSpeak) { pickVoices(); speechSynthesis.addEventListener?.("voiceschanged", pickVoices); }
+  // 기기에 해당 언어 음성이 없으면 온라인 음성(Google 번역 읽기)으로 대신 읽음
+  const audioQueue = [];
+  let audioPlaying = false;
+  function chunks(text) {
+    const parts = text.match(/[^.!?。…]+[.!?。…]*/g) || [text];
+    const out = [];
+    for (let p of parts) { p = p.trim(); while (p.length > 180) { out.push(p.slice(0, 180)); p = p.slice(180); } if (p) out.push(p); }
+    return out;
+  }
+  function playNextAudio() {
+    const item = audioQueue.shift();
+    if (!item) {
+      audioPlaying = false;
+      if (ttsPausedRec) { ttsPausedRec = false; if (listening) { try { rec.start(); } catch {} } }
+      return;
+    }
+    audioPlaying = true;
+    item.el?.classList.add("speaking");
+    const a = new Audio(`https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${item.lang}&q=${encodeURIComponent(item.text)}`);
+    a.playbackRate = role === "student" ? 0.9 : 1;
+    const next = () => { item.el?.classList.remove("speaking"); playNextAudio(); };
+    a.onended = next; a.onerror = next;
+    a.play().catch(next);
+  }
+  function speakOnline(text, lang, el) {
+    if (listening && rec) { ttsPausedRec = true; try { rec.abort(); } catch {} }
+    for (const c of chunks(text)) audioQueue.push({ text: c, lang, el });
+    if (!audioPlaying) playNextAudio();
+  }
   function speak(text, lang, el) {
-    if (!canSpeak || !text) return;
+    if (!text) return;
+    const voice = canSpeak ? (lang === "ru" ? ruVoice : koVoice) : null;
+    if (!voice) { speakOnline(text, lang, el); return; }
     const u = new SpeechSynthesisUtterance(text);
     u.lang = lang === "ru" ? "ru-RU" : "ko-KR";
     const v = lang === "ru" ? ruVoice : koVoice; if (v) u.voice = v;
@@ -341,11 +372,11 @@ details[open] summary{margin-bottom:8px}
     speechSynthesis.speak(u);
   }
   function setTts(on, save = true) {
-    ttsOn = on && canSpeak;
+    ttsOn = on;
     const b = $("sound");
     b.classList.toggle("on", ttsOn); b.setAttribute("aria-pressed", String(ttsOn));
     b.textContent = role === "student" ? (ttsOn ? "🔊" : "🔇") : (ttsOn ? "🔊 읽어 주기 켜짐" : "🔇 읽어 주기 꺼짐");
-    if (!ttsOn && canSpeak) speechSynthesis.cancel();
+    if (!ttsOn) { if (canSpeak) speechSynthesis.cancel(); audioQueue.length = 0; }
     if (save) store.set("tts." + role, ttsOn);
   }
   // 새 문장을 자동으로 읽을지: 학생 태블릿은 선생님 말만, 선생님 화면은 켜 두었을 때 모든 문장(선생님 말=러시아어, 학생 말=한국어)
@@ -365,7 +396,7 @@ details[open] summary{margin-bottom:8px}
     who.textContent = e.speaker === "teacher" ? (role === "student" ? "Учитель · 선생님" : "선생님") : (role === "student" ? "Я · 나" : "학생 · Ученик");
     const m = document.createElement("div"); m.className = "main " + ml; m.textContent = e[ml];
     const s = document.createElement("div"); s.className = "sub " + sl; s.textContent = e[sl];
-    if (canSpeak) { const say = document.createElement("span"); say.className = "say"; say.textContent = "🔊"; say.setAttribute("aria-hidden", "true"); who.append(say); }
+    { const say = document.createElement("span"); say.className = "say"; say.textContent = "🔊"; say.setAttribute("aria-hidden", "true"); who.append(say); }
     el.title = role === "student" ? "Нажми, чтобы послушать ещё раз" : "누르면 다시 읽어 줍니다";
     el.addEventListener("click", () => speak(e[ml], ml, el));
     el.append(who, m, s);
@@ -652,7 +683,6 @@ details[open] summary{margin-bottom:8px}
   }
   function enter(r, code) {
     role = r;
-    if (!canSpeak) $("sound").hidden = true;
     $("start").hidden = true; $("app").hidden = false;
     applyTheme(document.documentElement.dataset.theme);
     if (r === "teacher") {
@@ -671,7 +701,7 @@ details[open] summary{margin-bottom:8px}
       setTts(store.get("tts.student", true), false);
       $("phrases").open = true;  // 그림 버튼은 처음부터 펼쳐 둠
       // 태블릿은 화면을 한 번 눌러야 소리를 낼 수 있어서 처음에 큰 버튼을 보여 줌
-      if (canSpeak && ttsOn) $("unlock").hidden = false;
+      if (ttsOn) $("unlock").hidden = false;
       startStudentLink(code);
     }
     emptyMessage();
