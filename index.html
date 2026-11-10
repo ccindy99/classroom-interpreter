@@ -84,6 +84,14 @@ main{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex
 .empty b{color:var(--fg)}
 
 /* 연결 안내 (선생님) */
+.entry{cursor:pointer}
+.entry .who .say{display:inline-flex;align-items:center;justify-content:center;width:1.9em;height:1.9em;margin-left:6px;border-radius:50%;background:var(--chip);font-size:15px;vertical-align:middle}
+.entry.speaking .main{text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:4px;text-underline-offset:8px}
+.tool.on{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:700}
+#unlock{position:fixed;inset:0;z-index:20;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px}
+#unlock button{border:0;border-radius:32px;background:var(--accent);color:var(--accent-fg);padding:36px 48px;display:flex;flex-direction:column;align-items:center;gap:12px;font-family:var(--ru-font);font-size:24px;font-weight:700;max-width:100%}
+#unlock .ico{font-size:96px;line-height:1}
+.chips button .emo{font-size:1.5em;margin-right:6px;vertical-align:middle}
 #pair{position:absolute;top:16px;right:24px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;gap:16px;align-items:center;max-width:calc(100% - 32px);box-shadow:0 8px 30px rgba(0,0,0,.08);z-index:2}
 #pair .qr{width:150px;height:150px;background:#fff;border-radius:8px;padding:6px;flex:none}
 #pair .qr svg{width:100%;height:100%;display:block}
@@ -133,6 +141,8 @@ details[open] summary{margin-bottom:8px}
 </section>
 
 <!-- 앱 -->
+<div id="unlock" hidden><button id="unlockBtn"><span class="ico" aria-hidden="true">🔊</span><span>Нажми, чтобы включить звук</span></button></div>
+
 <section id="app" hidden style="display:flex;flex-direction:column;flex:1;min-height:0">
 <header>
   <div class="brand">교실 통역판 <small>Переводчик</small></div>
@@ -144,6 +154,7 @@ details[open] summary{margin-bottom:8px}
   <button class="tool" id="bigger" title="글자 크게">가+</button>
   <button class="tool" id="theme">어둡게</button>
   <button class="tool" id="full">전체 화면</button>
+  <button class="tool" id="sound" aria-pressed="false">🔇 읽어 주기 꺼짐</button>
   <button class="tool" id="clear">지우기</button>
   <div class="status">
     <span class="dot" id="dot"></span><span id="statusText"></span>
@@ -209,17 +220,18 @@ details[open] summary{margin-bottom:8px}
     ["줄을 서자.", "Встань в очередь."],
     ["내일 보자!", "До завтра!"]
   ];
+  // 학생은 글을 읽지 못하므로 그림 기호를 함께 보여 주고, 누르면 소리로도 들려 줍니다
   const STUDENT_PHRASES = [
-    ["Я не понимаю.", "이해가 안 돼요."],
-    ["Повторите, пожалуйста.", "다시 말해 주세요."],
-    ["Можно в туалет?", "화장실에 가도 돼요?"],
-    ["Мне плохо.", "몸이 안 좋아요."],
-    ["Можно воды?", "물 마셔도 돼요?"],
-    ["Да.", "네."],
-    ["Нет.", "아니요."],
-    ["Я закончил(а).", "다 했어요."],
-    ["Помогите, пожалуйста.", "도와주세요."],
-    ["Спасибо!", "고마워요!"]
+    ["Я не понимаю.", "이해가 안 돼요.", "❓"],
+    ["Повторите, пожалуйста.", "다시 말해 주세요.", "🔁"],
+    ["Можно в туалет?", "화장실에 가도 돼요?", "🚻"],
+    ["Мне плохо.", "몸이 안 좋아요.", "🤒"],
+    ["Можно воды?", "물 마셔도 돼요?", "💧"],
+    ["Да.", "네.", "👍"],
+    ["Нет.", "아니요.", "👎"],
+    ["Я закончил(а).", "다 했어요.", "✅"],
+    ["Помогите, пожалуйста.", "도와주세요.", "🙋"],
+    ["Спасибо!", "고마워요!", "🙏"]
   ];
 
   // 말하는 사람 기준 모드
@@ -296,8 +308,51 @@ details[open] summary{margin-bottom:8px}
   const history = $("history");
   const seen = new Set();
   const recent = [];
+  // ---------- 소리로 읽어 주기 (브라우저 음성 합성) ----------
+  const canSpeak = "speechSynthesis" in window;
+  let ttsOn = false, ruVoice = null, koVoice = null, ttsPausedRec = false;
+  function pickVoices() {
+    const vs = speechSynthesis.getVoices();
+    const best = re => vs.filter(v => re.test(v.lang)).sort((a, b) => (b.localService === false) - (a.localService === false))[0] || null;
+    ruVoice = best(/^ru/i); koVoice = best(/^ko/i);
+  }
+  if (canSpeak) { pickVoices(); speechSynthesis.addEventListener?.("voiceschanged", pickVoices); }
+  function speak(text, lang, el) {
+    if (!canSpeak || !text) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = lang === "ru" ? "ru-RU" : "ko-KR";
+    const v = lang === "ru" ? ruVoice : koVoice; if (v) u.voice = v;
+    u.rate = role === "student" ? 0.9 : 1;
+    u.onstart = () => {
+      el?.classList.add("speaking");
+      // 같은 기기의 마이크가 스피커 소리를 받아 적지 않도록 읽는 동안 잠시 멈춤
+      if (listening && rec) { ttsPausedRec = true; try { rec.abort(); } catch {} }
+    };
+    const done = () => {
+      el?.classList.remove("speaking");
+      setTimeout(() => {
+        if (ttsPausedRec && !speechSynthesis.speaking && !speechSynthesis.pending) {
+          ttsPausedRec = false;
+          if (listening) { try { rec.start(); } catch {} }
+        }
+      }, 250);
+    };
+    u.onend = done; u.onerror = done;
+    speechSynthesis.speak(u);
+  }
+  function setTts(on, save = true) {
+    ttsOn = on && canSpeak;
+    const b = $("sound");
+    b.classList.toggle("on", ttsOn); b.setAttribute("aria-pressed", String(ttsOn));
+    b.textContent = role === "student" ? (ttsOn ? "🔊" : "🔇") : (ttsOn ? "🔊 읽어 주기 켜짐" : "🔇 읽어 주기 꺼짐");
+    if (!ttsOn && canSpeak) speechSynthesis.cancel();
+    if (save) store.set("tts." + role, ttsOn);
+  }
+  // 새 문장을 자동으로 읽을지: 학생 태블릿은 선생님 말만, 선생님 화면은 켜 두었을 때 모든 문장(선생님 말=러시아어, 학생 말=한국어)
+  function shouldSpeak(e) { return ttsOn && (role === "teacher" || e.speaker === "teacher"); }
+
   function mainLang(e) { return role === "student" ? "ru" : (e.speaker === "teacher" ? "ru" : "ko"); }
-  function render(e) {
+  function render(e, opts = {}) {
     if (seen.has(e.id)) return;
     seen.add(e.id);
     recent.push(e); if (recent.length > 12) recent.shift();
@@ -310,8 +365,12 @@ details[open] summary{margin-bottom:8px}
     who.textContent = e.speaker === "teacher" ? (role === "student" ? "Учитель · 선생님" : "선생님") : (role === "student" ? "Я · 나" : "학생 · Ученик");
     const m = document.createElement("div"); m.className = "main " + ml; m.textContent = e[ml];
     const s = document.createElement("div"); s.className = "sub " + sl; s.textContent = e[sl];
+    if (canSpeak) { const say = document.createElement("span"); say.className = "say"; say.textContent = "🔊"; say.setAttribute("aria-hidden", "true"); who.append(say); }
+    el.title = role === "student" ? "Нажми, чтобы послушать ещё раз" : "누르면 다시 읽어 줍니다";
+    el.addEventListener("click", () => speak(e[ml], ml, el));
     el.append(who, m, s);
     history.append(el);
+    if (!opts.quiet && shouldSpeak(e)) speak(e[ml], ml, el);
     while (history.children.length > 30) history.firstElementChild.remove();
     history.scrollTop = history.scrollHeight;
   }
@@ -365,7 +424,7 @@ details[open] summary{margin-bottom:8px}
   function handleIncoming(msg) {
     if (!msg || typeof msg !== "object") return;
     if (msg.type === "entry" && msg.entry) render(msg.entry);
-    else if (msg.type === "history" && Array.isArray(msg.entries)) msg.entries.forEach(render);
+    else if (msg.type === "history" && Array.isArray(msg.entries)) msg.entries.forEach(x => render(x, { quiet: true }));
     else if (msg.type === "live") showLive(msg.src || "", msg.tgt, msg.speaker);
     else if (msg.type === "clear") clearScreen();
   }
@@ -486,6 +545,8 @@ details[open] summary{margin-bottom:8px}
   function sendPhrase(src, tgt) {
     const entry = { id: newId(), speaker: mode.speaker, [mode.src]: src, [mode.tgt]: tgt };
     render(entry);
+    // 학생이 고른 표현을 러시아어로 들려줘서 맞게 눌렀는지 알 수 있게
+    if (role === "student") speak(src, "ru");
     broadcast({ type: "entry", entry });
   }
 
@@ -535,7 +596,7 @@ details[open] summary{margin-bottom:8px}
         setStatus("마이크를 찾지 못했어요. 마이크 연결을 확인하세요.", false);
       }
     };
-    r.onend = () => { if (listening) { try { r.start(); } catch {} } };
+    r.onend = () => { if (listening && !ttsPausedRec) { try { r.start(); } catch {} } };
     return r;
   }
   function startListening() {
@@ -562,9 +623,11 @@ details[open] summary{margin-bottom:8px}
   function renderChips() {
     const box = $("chips"); box.textContent = "";
     $("chipsLabel").textContent = mode.label;
-    for (const [src, tgt] of mode.phrases) {
+    for (const [src, tgt, emo] of mode.phrases) {
       const b = document.createElement("button");
-      b.textContent = src; b.className = mode.src;
+      b.className = mode.src;
+      if (emo) { const i = document.createElement("span"); i.className = "emo"; i.textContent = emo; i.setAttribute("aria-hidden", "true"); b.append(i); }
+      b.append(src);
       b.addEventListener("click", () => sendPhrase(src, tgt));
       box.append(b);
     }
@@ -589,11 +652,13 @@ details[open] summary{margin-bottom:8px}
   }
   function enter(r, code) {
     role = r;
+    if (!canSpeak) $("sound").hidden = true;
     $("start").hidden = true; $("app").hidden = false;
     applyTheme(document.documentElement.dataset.theme);
     if (r === "teacher") {
       setMode("T");
       setStatus("준비됨 · 마이크 버튼(또는 스페이스바)을 눌러 시작하세요", false);
+      setTts(store.get("tts.teacher", false), false);
       startTeacherLink();
     } else {
       // 학생 태블릿: 방향은 '학생 → 선생님' 고정, 메뉴는 러시아어로
@@ -603,6 +668,10 @@ details[open] summary{margin-bottom:8px}
       if (size > 56) { size = 48; applySize(); }
       setMode("S");
       setStatus("Нажми кнопку, чтобы сказать учителю", false);
+      setTts(store.get("tts.student", true), false);
+      $("phrases").open = true;  // 그림 버튼은 처음부터 펼쳐 둠
+      // 태블릿은 화면을 한 번 눌러야 소리를 낼 수 있어서 처음에 큰 버튼을 보여 줌
+      if (canSpeak && ttsOn) $("unlock").hidden = false;
       startStudentLink(code);
     }
     emptyMessage();
@@ -631,6 +700,11 @@ details[open] summary{margin-bottom:8px}
     if (document.fullscreenElement) document.exitFullscreen?.();
     else document.documentElement.requestFullscreen?.().catch(() => {});
   });
+  $("sound").addEventListener("click", () => {
+    setTts(!ttsOn);
+    if (ttsOn) speak(role === "student" ? "Звук включён." : "러시아어로 읽어 드릴게요.", role === "student" ? "ru" : "ko");
+  });
+  $("unlockBtn").addEventListener("click", () => { $("unlock").hidden = true; speak("Привет! Звук включён.", "ru"); });
   $("clear").addEventListener("click", () => { clearScreen(); broadcast({ type: "clear" }); });
   $("pairClose").addEventListener("click", () => { $("pair").hidden = true; });
   $("linkInfo").addEventListener("click", () => { if (role === "teacher") $("pair").hidden = !$("pair").hidden; });
