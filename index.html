@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f7a52">
+<title>교실 통역판 · Переводчик</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* 칠판 화면: 위는 상태·도구, 가운데 큰 번역 자막, 아래는 마이크와 입력 */
+:root{
+  --bg:#f4f6f3; --panel:#ffffff; --line:#d5dbd4; --fg:#18231d; --muted:#5d6b62;
+  --accent:#1f7a52; --accent-fg:#ffffff; --live:#c2410c; --chip:#e7ede6; --student:#6d3fc4;
+  --ru-font:"Noto Sans","Noto Sans KR",system-ui,sans-serif;
+  --ko-font:"Noto Sans KR","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  --size:64px;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --bg:#13201a; --panel:#1b2b23; --line:#2d4236; --fg:#f1f5ef; --muted:#9fb2a6;
+  --accent:#5fd39a; --accent-fg:#0d1a13; --live:#fb923c; --chip:#243a2e; --student:#c4a5ff;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--ko-font);display:flex;flex-direction:column;overflow:hidden;
+  padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+
+/* ---------- 시작 화면 ---------- */
+#start{flex:1;overflow-y:auto;display:flex;align-items:center;justify-content:center;padding:24px 16px}
+.start-box{width:100%;max-width:760px;display:flex;flex-direction:column;gap:20px}
+.start-box h1{margin:0;font-size:clamp(26px,4vw,38px);text-wrap:balance}
+.start-box h1 small{display:block;font-family:var(--ru-font);font-size:.55em;color:var(--muted);font-weight:500;margin-top:4px}
+.roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.role{border:1px solid var(--line);background:var(--panel);border-radius:16px;padding:22px;text-align:left;display:flex;flex-direction:column;gap:8px}
+.role strong{font-size:22px}
+.role span{color:var(--muted);line-height:1.5;font-size:15px}
+.role:hover{border-color:var(--accent)}
+.join-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+#joinCode{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:26px;letter-spacing:.25em;text-transform:uppercase;width:9.5em;max-width:100%;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.btn{border:0;border-radius:999px;padding:12px 22px;background:var(--accent);color:var(--accent-fg);font-weight:700;font-size:17px}
+.note{color:var(--muted);font-size:14px;line-height:1.6}
+
+/* ---------- 상단 ---------- */
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;padding:10px 20px;padding-top:max(10px,env(safe-area-inset-top,0px));border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-weight:700;font-size:18px;margin-right:auto;display:flex;gap:8px;align-items:baseline}
+.brand small{font-family:var(--ru-font);font-weight:500;color:var(--muted);font-size:14px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:7px 14px;font-size:14px}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);font-weight:700}
+.tool{border:1px solid var(--line);background:transparent;border-radius:8px;padding:6px 11px;font-size:14px}
+.status{font-size:13px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-basis:100%;flex-wrap:wrap}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:none}
+.dot.on{background:var(--live);animation:pulse 1.2s infinite}
+.dot.ok{background:var(--accent)}
+@keyframes pulse{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.dot.on{animation:none}}
+.link{margin-left:auto;display:flex;align-items:center;gap:6px;font-weight:700;color:var(--fg)}
+.link .code{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.15em;background:var(--chip);padding:2px 8px;border-radius:6px}
+
+/* ---------- 자막 ---------- */
+main{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-end;padding:16px 40px 8px;overflow:hidden;position:relative}
+#history{display:flex;flex-direction:column;gap:18px;overflow-y:auto;min-height:0;scrollbar-width:thin}
+.entry{display:flex;flex-direction:column;gap:4px;opacity:.45;transition:opacity .3s}
+.entry .who{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.04em}
+.entry.from-student .who{color:var(--student)}
+.entry.from-student .main{color:var(--student)}
+.entry .main{font-size:calc(var(--size)*.5);line-height:1.25;font-weight:700}
+.entry .sub{font-size:calc(var(--size)*.24);color:var(--muted)}
+.entry.latest{opacity:1}
+.entry.latest .main{font-size:var(--size)}
+.entry.latest .sub{font-size:calc(var(--size)*.34)}
+.ru{font-family:var(--ru-font)}
+.ko{font-family:var(--ko-font)}
+#live{min-height:calc(var(--size)*.9);padding-top:10px;border-top:1px dashed var(--line);margin-top:14px}
+#live .main{font-size:calc(var(--size)*.6);color:var(--muted);font-weight:700;line-height:1.25}
+#live .sub{font-size:calc(var(--size)*.28);color:var(--live)}
+.empty{color:var(--muted);font-size:clamp(18px,2.4vw,28px);line-height:1.6;max-width:40em}
+.empty b{color:var(--fg)}
+
+/* 연결 안내 (선생님) */
+#pair{position:absolute;top:16px;right:24px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;gap:16px;align-items:center;max-width:calc(100% - 32px);box-shadow:0 8px 30px rgba(0,0,0,.08);z-index:2}
+#pair .qr{width:150px;height:150px;background:#fff;border-radius:8px;padding:6px;flex:none}
+#pair .qr svg{width:100%;height:100%;display:block}
+#pair .info{display:flex;flex-direction:column;gap:6px;min-width:0}
+#pair .big{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:40px;font-weight:700;letter-spacing:.2em}
+#pair .info span{color:var(--muted);font-size:14px;line-height:1.5}
+#pair .close{align-self:flex-start;border:1px solid var(--line);background:transparent;border-radius:8px;padding:4px 10px;font-size:13px}
+
+/* ---------- 하단 ---------- */
+footer{padding:12px 20px 16px;padding-bottom:max(16px,env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:10px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#mic{display:flex;align-items:center;gap:10px;border:0;border-radius:999px;padding:14px 26px;background:var(--accent);color:var(--accent-fg);font-weight:700;font-size:18px}
+#mic.on{background:var(--live)}
+#mic svg{width:22px;height:22px}
+#typed{flex:1;min-width:180px;border:1px solid var(--line);border-radius:999px;padding:13px 20px;background:var(--bg);font-size:17px}
+#send{border:1px solid var(--line);border-radius:999px;padding:13px 20px;background:transparent;font-weight:700}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chips button{border:1px solid var(--line);background:var(--chip);border-radius:999px;padding:7px 14px;font-size:15px}
+.chips-label{font-size:12px;color:var(--muted);letter-spacing:.04em}
+details summary{cursor:pointer;font-size:14px;color:var(--muted)}
+details[open] summary{margin-bottom:8px}
+@media (max-width:700px){main{padding:12px 16px}header,footer{padding-left:16px;padding-right:16px}#pair{right:16px;left:16px}#pair .qr{width:110px;height:110px}#pair .big{font-size:30px}}
+</style>
+</head>
+<body>
+
+<!-- 시작: 역할 고르기 -->
+<section id="start">
+  <div class="start-box">
+    <h1>교실 통역판<small>Переводчик для класса</small></h1>
+    <div class="roles">
+      <button class="role" id="pickTeacher">
+        <strong>선생님 화면</strong>
+        <span>교실 컴퓨터에서 여세요. 선생님 말씀을 듣고 러시아어로 번역해 큰 화면과 학생 태블릿에 함께 띄웁니다.</span>
+      </button>
+      <div class="role" style="cursor:default">
+        <strong>Ученик · 학생 태블릿</strong>
+        <span>Введи код с экрана учителя. 선생님 화면에 보이는 코드를 입력하세요.</span>
+        <div class="join-row">
+          <input id="joinCode" maxlength="5" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CODE" aria-label="방 코드">
+          <button class="btn" id="pickStudent">Войти</button>
+        </div>
+      </div>
+    </div>
+    <p class="note">학생 태블릿은 선생님 화면의 QR 코드를 카메라로 찍으면 코드 입력 없이 바로 연결됩니다. 연결이 안 되면 학생 화면에서도 이 앱을 혼자 쓸 수 있어요.</p>
+  </div>
+</section>
+
+<!-- 앱 -->
+<section id="app" hidden style="display:flex;flex-direction:column;flex:1;min-height:0">
+<header>
+  <div class="brand">교실 통역판 <small>Переводчик</small></div>
+  <div class="seg" role="group" aria-label="번역 방향" id="modeSeg">
+    <button id="modeT" aria-pressed="true">선생님 말 → 러시아어</button>
+    <button id="modeS" aria-pressed="false">Ученик → 한국어</button>
+  </div>
+  <button class="tool" id="smaller" title="글자 작게">가−</button>
+  <button class="tool" id="bigger" title="글자 크게">가+</button>
+  <button class="tool" id="theme">어둡게</button>
+  <button class="tool" id="full">전체 화면</button>
+  <button class="tool" id="clear">지우기</button>
+  <div class="status">
+    <span class="dot" id="dot"></span><span id="statusText"></span>
+    <span class="link" id="linkInfo"><span class="dot" id="linkDot"></span><span id="linkText"></span></span>
+  </div>
+</header>
+
+<main>
+  <div id="pair" hidden>
+    <div class="qr" id="qr" aria-label="학생 태블릿 연결용 QR 코드"></div>
+    <div class="info">
+      <span>학생 태블릿 연결 · Подключи планшет</span>
+      <div class="big" id="pairCode"></div>
+      <span id="pairHint">학생 태블릿에서 이 앱을 열고 코드를 입력하거나 QR을 찍으세요.</span>
+      <button class="close" id="pairClose">숨기기</button>
+    </div>
+  </div>
+  <div id="history" aria-live="polite"></div>
+  <div id="live" hidden><div class="main" id="liveMain"></div><div class="sub" id="liveSub"></div></div>
+</main>
+
+<footer>
+  <div class="row">
+    <button id="mic" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      <span id="micLabel">마이크 시작</span>
+    </button>
+    <input id="typed" type="text" autocomplete="off">
+    <button id="send">번역</button>
+  </div>
+  <details id="phrases">
+    <summary id="phrasesSummary">자주 쓰는 말</summary>
+    <div class="chips-label" id="chipsLabel"></div>
+    <div class="chips" id="chips"></div>
+  </details>
+</footer>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const ID_PREFIX = "kr-class-interp-v1-";
+  const RELAY = "https://ntfy.sh/";
+
+  // ---------- 미리 번역해 둔 표현 (아이에게 하는 반말체 'ты') ----------
+  const TEACHER_PHRASES = [
+    ["안녕! 우리 반에 온 걸 환영해.", "Привет! Добро пожаловать в наш класс!"],
+    ["책을 펴 보자.", "Открой учебник."],
+    ["잘했어!", "Молодец!"],
+    ["이해했어?", "Тебе понятно?"],
+    ["나를 따라 해 봐.", "Повторяй за мной."],
+    ["짝과 함께 해 봐.", "Работай вместе с соседом по парте."],
+    ["잠깐 기다려 줘.", "Подожди, пожалуйста."],
+    ["조용히 해 줄래?", "Тише, пожалуйста."],
+    ["연필을 꺼내.", "Достань карандаш."],
+    ["화장실에 가고 싶으면 손을 들어.", "Если хочешь в туалет, подними руку."],
+    ["도움이 필요하면 말해 줘.", "Если нужна помощь, скажи мне."],
+    ["몸이 아프면 바로 말해.", "Если плохо себя чувствуешь, сразу скажи."],
+    ["쉬는 시간이야.", "Сейчас перемена."],
+    ["점심 먹으러 가자.", "Пойдём обедать."],
+    ["줄을 서자.", "Встань в очередь."],
+    ["내일 보자!", "До завтра!"]
+  ];
+  const STUDENT_PHRASES = [
+    ["Я не понимаю.", "이해가 안 돼요."],
+    ["Повторите, пожалуйста.", "다시 말해 주세요."],
+    ["Можно в туалет?", "화장실에 가도 돼요?"],
+    ["Мне плохо.", "몸이 안 좋아요."],
+    ["Можно воды?", "물 마셔도 돼요?"],
+    ["Да.", "네."],
+    ["Нет.", "아니요."],
+    ["Я закончил(а).", "다 했어요."],
+    ["Помогите, пожалуйста.", "도와주세요."],
+    ["Спасибо!", "고마워요!"]
+  ];
+
+  // 말하는 사람 기준 모드
+  const MODES = {
+    T: { speaker: "teacher", src: "ko", tgt: "ru", rec: "ko-KR", placeholder: "한국어로 입력하고 Enter", send: "번역", mic: "마이크 시작", micOn: "마이크 끄기", phrases: TEACHER_PHRASES, label: "선생님 → 학생 (미리 번역됨)" },
+    S: { speaker: "student", src: "ru", tgt: "ko", rec: "ru-RU", placeholder: "Напиши по-русски и нажми Enter", send: "Перевести", mic: "Сказать учителю", micOn: "Стоп", phrases: STUDENT_PHRASES, label: "Ученик → учитель · 학생 → 선생님" }
+  };
+  let role = null;          // "teacher" | "student"
+  let mode = MODES.T;
+
+  // ---------- 설정 저장 ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem("classInterp." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem("classInterp." + k, JSON.stringify(v)); } catch {} }
+  };
+  let size = store.get("size", 64);
+  const applySize = () => document.documentElement.style.setProperty("--size", size + "px");
+  applySize();
+  const applyTheme = t => { document.documentElement.dataset.theme = t; $("theme").textContent = t === "dark" ? (role === "student" ? "☀" : "밝게") : (role === "student" ? "☾" : "어둡게"); };
+  applyTheme(store.get("theme", "light"));
+
+  const setStatus = (text, on) => { $("statusText").textContent = text; $("dot").classList.toggle("on", !!on); };
+  const setLink = (text, ok) => { $("linkText").textContent = text; $("linkDot").classList.toggle("ok", !!ok); };
+
+  // ---------- 번역 ----------
+  const translators = {};
+  let engineName = "";
+  async function chromeTranslator(src, tgt) {
+    if (!("Translator" in self)) return null;
+    try {
+      const avail = await Translator.availability({ sourceLanguage: src, targetLanguage: tgt });
+      if (avail === "unavailable") return null;
+      if (avail !== "available") setStatus("번역 언어팩 내려받는 중… (처음 한 번만)", false);
+      const t = await Translator.create({
+        sourceLanguage: src, targetLanguage: tgt,
+        monitor(m) { m.addEventListener("downloadprogress", e => setStatus(`언어팩 내려받는 중… ${Math.round((e.loaded || 0) * 100)}%`, false)); }
+      });
+      return { name: "크롬 내장 번역", run: s => t.translate(s) };
+    } catch (e) { console.warn("Translator API", e); return null; }
+  }
+  async function googleRun(s, src, tgt) {
+    const r = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src}&tl=${tgt}&dt=t&q=${encodeURIComponent(s)}`);
+    if (!r.ok) throw new Error("google " + r.status);
+    const j = await r.json();
+    return j[0].map(x => x[0]).join("");
+  }
+  async function myMemoryRun(s, src, tgt) {
+    const r = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(s)}&langpair=${src}|${tgt}`);
+    const j = await r.json();
+    if (!j.responseData || j.responseStatus !== 200) throw new Error("mymemory");
+    return j.responseData.translatedText;
+  }
+  async function getTranslator(src, tgt) {
+    const key = src + ">" + tgt;
+    if (translators[key]) return translators[key];
+    const c = await chromeTranslator(src, tgt);
+    translators[key] = c || { name: "온라인 번역", run: async s => { try { return await googleRun(s, src, tgt); } catch { return await myMemoryRun(s, src, tgt); } } };
+    return translators[key];
+  }
+  async function translate(text, m = mode) {
+    const t = await getTranslator(m.src, m.tgt);
+    engineName = t.name;
+    return t.run(text);
+  }
+
+  // ---------- 자막 표시 ----------
+  // entry = {id, speaker:"teacher"|"student", ko, ru}
+  // 선생님 화면: 선생님 말은 러시아어를 크게(학생이 보도록), 학생 말은 한국어를 크게
+  // 학생 태블릿: 항상 러시아어를 크게
+  const history = $("history");
+  const seen = new Set();
+  const recent = [];
+  function mainLang(e) { return role === "student" ? "ru" : (e.speaker === "teacher" ? "ru" : "ko"); }
+  function render(e) {
+    if (seen.has(e.id)) return;
+    seen.add(e.id);
+    recent.push(e); if (recent.length > 12) recent.shift();
+    $("empty")?.remove();
+    history.querySelectorAll(".entry.latest").forEach(x => x.classList.remove("latest"));
+    const ml = mainLang(e), sl = ml === "ru" ? "ko" : "ru";
+    const el = document.createElement("div");
+    el.className = "entry latest" + (e.speaker === "student" ? " from-student" : "");
+    const who = document.createElement("div"); who.className = "who";
+    who.textContent = e.speaker === "teacher" ? (role === "student" ? "Учитель · 선생님" : "선생님") : (role === "student" ? "Я · 나" : "학생 · Ученик");
+    const m = document.createElement("div"); m.className = "main " + ml; m.textContent = e[ml];
+    const s = document.createElement("div"); s.className = "sub " + sl; s.textContent = e[sl];
+    el.append(who, m, s);
+    history.append(el);
+    while (history.children.length > 30) history.firstElementChild.remove();
+    history.scrollTop = history.scrollHeight;
+  }
+  function showLive(srcText, tgtText, speaker = mode.speaker) {
+    const live = $("live");
+    if (!srcText) { live.hidden = true; $("liveSub").textContent = ""; $("liveMain").textContent = ""; return; }
+    live.hidden = false;
+    // 진행 중인 말: 원문은 작게, 번역(있으면)은 크게
+    const srcLang = speaker === "teacher" ? "ko" : "ru";
+    const tgtLang = srcLang === "ko" ? "ru" : "ko";
+    $("liveSub").className = "sub " + srcLang; $("liveSub").textContent = srcText;
+    $("liveMain").className = "main " + tgtLang;
+    if (tgtText !== undefined) $("liveMain").textContent = tgtText;
+  }
+  function clearScreen() { history.textContent = ""; showLive(""); }
+  const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+  // ---------- 연결 (WebRTC 직접 연결 → 안 되면 ntfy.sh 중계) ----------
+  let peer = null, conns = [], studentConn = null;
+  let roomCode = "", relayOn = false, relaySource = null;
+  const myTag = newId();
+
+  function makeCode() {
+    const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    let s = ""; for (let i = 0; i < 5; i++) s += A[Math.floor(Math.random() * A.length)];
+    return s;
+  }
+  function relayTopic() { return ID_PREFIX + roomCode.toLowerCase(); }
+  function relaySend(msg) {
+    if (!relayOn) return;
+    if (msg.type === "live") return; // 중계는 횟수 제한이 있어 완성된 문장만 보냅니다
+    fetch(RELAY + relayTopic(), { method: "POST", body: JSON.stringify({ ...msg, from: myTag }) }).catch(() => {});
+  }
+  function roomTopicPing(msg) {
+    fetch(RELAY + relayTopic(), { method: "POST", body: JSON.stringify({ ...msg, from: myTag }) }).catch(() => {});
+  }
+  function relayListen(onMsg) {
+    if (relaySource) return;
+    try {
+      relaySource = new EventSource(RELAY + relayTopic() + "/sse");
+      relaySource.onmessage = ev => {
+        try { const d = JSON.parse(ev.data); if (d.event !== "message") return; const msg = JSON.parse(d.message); if (msg.from === myTag) return; onMsg(msg); } catch {}
+      };
+    } catch {}
+  }
+  function broadcast(msg) {
+    for (const c of conns) { try { if (c.open) c.send(msg); } catch {} }
+    if (role === "student" && studentConn?.open) { try { studentConn.send(msg); } catch {} }
+    relaySend(msg);
+  }
+  function handleIncoming(msg) {
+    if (!msg || typeof msg !== "object") return;
+    if (msg.type === "entry" && msg.entry) render(msg.entry);
+    else if (msg.type === "history" && Array.isArray(msg.entries)) msg.entries.forEach(render);
+    else if (msg.type === "live") showLive(msg.src || "", msg.tgt, msg.speaker);
+    else if (msg.type === "clear") clearScreen();
+  }
+
+  // 선생님: 방 열기
+  function startTeacherLink() {
+    roomCode = store.get("room", "") || makeCode();
+    store.set("room", roomCode);
+    $("pairCode").textContent = roomCode;
+    drawQR();
+    $("pair").hidden = false;
+    setLink("학생 연결 준비 중…", false);
+    if (typeof Peer === "undefined") { setLink("연결 기능을 불러오지 못했어요", false); return; }
+    const open = () => {
+      peer = new Peer(ID_PREFIX + roomCode.toLowerCase(), { debug: 0 });
+      peer.on("open", () => updateTeacherLink());
+      peer.on("connection", c => {
+        c.on("open", () => { conns.push(c); c.send({ type: "history", entries: recent }); updateTeacherLink(); });
+        c.on("data", handleIncoming);
+        c.on("close", () => { conns = conns.filter(x => x !== c); updateTeacherLink(); });
+        c.on("error", () => { conns = conns.filter(x => x !== c); updateTeacherLink(); });
+      });
+      peer.on("disconnected", () => { try { peer.reconnect(); } catch {} });
+      peer.on("error", err => {
+        if (err.type === "unavailable-id") { // 같은 코드가 이미 쓰이고 있음 → 새 코드
+          peer.destroy(); roomCode = makeCode(); store.set("room", roomCode); $("pairCode").textContent = roomCode; drawQR(); open();
+        } else if (err.type === "network" || err.type === "server-error" || err.type === "socket-error") {
+          setLink("직접 연결 서버에 닿지 않아요 · 중계로 대기 중", false);
+        }
+      });
+    };
+    open();
+    // 학생이 먼저 중계로 기다리고 있었다면 알 수 있게 한 번 알림
+    roomTopicPing({ type: "teacher-online" });
+    // 중계: 학생이 중계로 들어오면 그때부터 완성된 문장을 중계로도 보냄
+    relayListen(msg => {
+      if (msg.type === "hello") { relayOn = true; relaySend({ type: "history", entries: recent.slice(-4) }); updateTeacherLink(); }
+      else handleIncoming(msg);
+    });
+  }
+  function updateTeacherLink() {
+    const n = conns.filter(c => c.open).length;
+    if (n > 0) { setLink(`학생 태블릿 ${n}대 연결됨 · 코드 ${roomCode}`, true); $("pair").hidden = true; }
+    else if (relayOn) setLink(`학생 태블릿 연결됨(중계) · 코드 ${roomCode}`, true);
+    else setLink(`학생 대기 중 · 코드 ${roomCode}`, false);
+  }
+  function joinUrl() {
+    if (!/^https?:/.test(location.protocol)) return "";
+    return location.href.split("#")[0] + "#join-" + roomCode;
+  }
+  function drawQR() {
+    const url = joinUrl();
+    if (!url || typeof qrcode === "undefined") {
+      $("qr").hidden = true;
+      $("pairHint").textContent = "학생 태블릿에서 이 앱 주소를 열고 위 코드를 입력하세요.";
+      return;
+    }
+    $("qr").hidden = false;
+    const q = qrcode(0, "M"); q.addData(url); q.make();
+    $("qr").innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+    $("pairHint").textContent = "학생 태블릿 카메라로 QR을 찍거나, 이 앱을 열고 코드를 입력하세요.";
+  }
+
+  // 학생: 방 들어가기
+  let joinTimer = null, retryTimer = null;
+  function startStudentLink(code) {
+    roomCode = code.toUpperCase();
+    setLink(`선생님 화면에 연결 중… · ${roomCode}`, false);
+    let directOk = false;
+    // 8초 안에 직접 연결이 안 되면 중계로
+    joinTimer = setTimeout(() => { if (!directOk) useRelay(); }, 8000);
+    if (typeof Peer === "undefined") { useRelay(); return; }
+    peer = new Peer({ debug: 0 });
+    const connect = () => {
+      studentConn = peer.connect(ID_PREFIX + roomCode.toLowerCase(), { reliable: true });
+      studentConn.on("open", () => { directOk = true; clearTimeout(joinTimer); setLink(`Подключено · 선생님 화면과 연결됨`, true); });
+      studentConn.on("data", handleIncoming);
+      studentConn.on("close", () => { setLink("Связь потеряна · 다시 연결 중…", false); retry(); });
+      studentConn.on("error", () => retry());
+    };
+    const retry = () => { clearTimeout(retryTimer); retryTimer = setTimeout(() => { if (!studentConn?.open) connect(); }, 5000); };
+    peer.on("open", connect);
+    peer.on("error", err => { if (err.type === "peer-unavailable") { setLink("Учитель не найден · 코드를 확인하세요", false); retry(); } });
+    peer.on("disconnected", () => { try { peer.reconnect(); } catch {} });
+  }
+  function useRelay() {
+    if (relayOn) return;
+    relayOn = true;
+    relayListen(msg => {
+      if (msg.type === "teacher-online") relaySend({ type: "hello" });  // 선생님이 나중에 화면을 연 경우
+      else handleIncoming(msg);
+    });
+    relaySend({ type: "hello" });
+    setLink("Подключено (через сервер) · 중계로 연결됨", true);
+  }
+
+  // ---------- 문장 완성 → 번역 → 화면/전송 ----------
+  let seq = 0;
+  async function commit(text, m = mode) {
+    text = text.trim();
+    if (!text) return;
+    ++seq;
+    showLive("");
+    broadcast({ type: "live", src: "" });
+    let out;
+    try { out = await translate(text, m); }
+    catch (e) {
+      console.error(e);
+      setStatus(role === "student" ? "Нет перевода. Проверь интернет." : "번역하지 못했어요. 인터넷 연결을 확인하세요.", listening);
+      return;
+    }
+    const entry = { id: newId(), speaker: m.speaker, [m.src]: text, [m.tgt]: out };
+    render(entry);
+    broadcast({ type: "entry", entry });
+    if (role === "student") setStatus(listening ? "Слушаю · отправлено учителю" : "Отправлено учителю ✓", listening);
+    else setStatus(listening ? `듣는 중 · ${engineName}` : `번역 완료 · ${engineName}`, listening);
+  }
+  function sendPhrase(src, tgt) {
+    const entry = { id: newId(), speaker: mode.speaker, [mode.src]: src, [mode.tgt]: tgt };
+    render(entry);
+    broadcast({ type: "entry", entry });
+  }
+
+  // 말하는 도중 미리보기 (0.9초 간격, 직접 연결된 화면에만 전송)
+  let interimText = "", interimTimer = null, interimBusy = false;
+  function scheduleInterim(text) {
+    interimText = text;
+    showLive(text);
+    broadcast({ type: "live", src: text, speaker: mode.speaker });
+    if (interimTimer || !text) return;
+    interimTimer = setTimeout(async () => {
+      interimTimer = null;
+      if (interimBusy || interimText.length < 4) return;
+      interimBusy = true;
+      const snap = interimText, mySeq = seq;
+      try {
+        const out = await translate(snap);
+        if (seq === mySeq && interimText) { showLive(interimText, out); broadcast({ type: "live", src: interimText, tgt: out, speaker: mode.speaker }); }
+      } catch {}
+      interimBusy = false;
+    }, 900);
+  }
+
+  // ---------- 음성 인식 ----------
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, listening = false;
+  function buildRec() {
+    const r = new SR();
+    r.lang = mode.rec; r.continuous = true; r.interimResults = true;
+    r.onresult = e => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        if (res.isFinal) { interimText = ""; commit(res[0].transcript); }
+        else interim += res[0].transcript;
+      }
+      if (interim) scheduleInterim(interim);
+    };
+    r.onerror = e => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        stopListening(true);
+        setStatus(role === "student" ? "Микрофон запрещён. Разреши его в настройках браузера." : "마이크 사용이 막혀 있어요. 주소창 왼쪽 아이콘에서 마이크를 '허용'으로 바꾼 뒤 다시 누르세요.", false);
+      } else if (e.error === "network") {
+        setStatus("음성 인식에 인터넷이 필요해요. 연결을 확인하세요.", listening);
+      } else if (e.error === "audio-capture") {
+        stopListening(true);
+        setStatus("마이크를 찾지 못했어요. 마이크 연결을 확인하세요.", false);
+      }
+    };
+    r.onend = () => { if (listening) { try { r.start(); } catch {} } };
+    return r;
+  }
+  function startListening() {
+    if (!SR) { setStatus(role === "student" ? "Голосовой ввод не работает в этом браузере. Пиши в поле ниже." : "이 브라우저는 음성 인식을 지원하지 않아요. 크롬(Chrome)으로 열어 주세요. 입력 칸은 그대로 쓸 수 있어요.", false); return; }
+    getTranslator(mode.src, mode.tgt).then(t => { engineName = t.name; });
+    rec = buildRec(); listening = true;
+    try { rec.start(); } catch {}
+    $("mic").classList.add("on"); $("mic").setAttribute("aria-pressed", "true");
+    $("micLabel").textContent = mode.micOn;
+    setStatus(mode.src === "ko" ? "듣는 중 · 한국어로 말씀하세요" : "Слушаю · говори по-русски", true);
+  }
+  function stopListening(silent) {
+    listening = false;
+    try { rec && rec.stop(); } catch {}
+    $("mic").classList.remove("on"); $("mic").setAttribute("aria-pressed", "false");
+    $("micLabel").textContent = mode.mic;
+    if (interimText) { const t = interimText; interimText = ""; commit(t); }
+    showLive(""); broadcast({ type: "live", src: "" });
+    if (!silent) setStatus(mode.src === "ko" ? "멈춤 · 마이크 버튼(또는 스페이스바)을 누르면 다시 시작해요" : "Нажми кнопку, чтобы сказать учителю", false);
+  }
+  const toggleMic = () => listening ? stopListening() : startListening();
+
+  // ---------- 모드/역할 ----------
+  function renderChips() {
+    const box = $("chips"); box.textContent = "";
+    $("chipsLabel").textContent = mode.label;
+    for (const [src, tgt] of mode.phrases) {
+      const b = document.createElement("button");
+      b.textContent = src; b.className = mode.src;
+      b.addEventListener("click", () => sendPhrase(src, tgt));
+      box.append(b);
+    }
+  }
+  function setMode(key) {
+    const wasOn = listening;
+    if (wasOn) stopListening(true);
+    mode = MODES[key];
+    $("modeT").setAttribute("aria-pressed", String(key === "T"));
+    $("modeS").setAttribute("aria-pressed", String(key === "S"));
+    $("typed").placeholder = mode.placeholder;
+    $("send").textContent = mode.send;
+    $("micLabel").textContent = mode.mic;
+    renderChips();
+    if (wasOn) startListening();
+  }
+  function emptyMessage() {
+    const d = document.createElement("div"); d.className = "empty"; d.id = "empty";
+    if (role === "teacher") d.innerHTML = "<b>마이크 시작</b>을 누르고 평소처럼 한국어로 말씀하세요. 말이 끝날 때마다 러시아어 번역이 여기와 학생 태블릿에 크게 뜹니다.<br>학생이 태블릿으로 보낸 말은 보라색 한국어로 여기에 뜹니다.";
+    else d.innerHTML = "<span class='ru'>Здесь появится перевод того, что говорит учитель.<br>Чтобы сказать что-то учителю, нажми <b>Сказать учителю</b> или напиши внизу.</span>";
+    history.append(d);
+  }
+  function enter(r, code) {
+    role = r;
+    $("start").hidden = true; $("app").hidden = false;
+    applyTheme(document.documentElement.dataset.theme);
+    if (r === "teacher") {
+      setMode("T");
+      setStatus("준비됨 · 마이크 버튼(또는 스페이스바)을 눌러 시작하세요", false);
+      startTeacherLink();
+    } else {
+      // 학생 태블릿: 방향은 '학생 → 선생님' 고정, 메뉴는 러시아어로
+      $("modeSeg").hidden = true; $("clear").hidden = true;
+      $("full").textContent = "⛶"; $("phrasesSummary").textContent = "Готовые фразы · 자주 쓰는 말";
+      $("smaller").title = "Меньше"; $("bigger").title = "Больше";
+      if (size > 56) { size = 48; applySize(); }
+      setMode("S");
+      setStatus("Нажми кнопку, чтобы сказать учителю", false);
+      startStudentLink(code);
+    }
+    emptyMessage();
+  }
+
+  // ---------- 이벤트 ----------
+  $("pickTeacher").addEventListener("click", () => enter("teacher"));
+  const tryJoin = () => {
+    const c = $("joinCode").value.replace(/[^a-z0-9]/gi, "").toUpperCase();
+    if (c.length !== 5) { $("joinCode").focus(); $("joinCode").select(); return; }
+    enter("student", c);
+  };
+  $("pickStudent").addEventListener("click", tryJoin);
+  $("joinCode").addEventListener("keydown", e => { if (e.key === "Enter") tryJoin(); });
+
+  $("mic").addEventListener("click", toggleMic);
+  $("modeT").addEventListener("click", () => setMode("T"));
+  $("modeS").addEventListener("click", () => setMode("S"));
+  const sendTyped = () => { const v = $("typed").value; $("typed").value = ""; commit(v); };
+  $("send").addEventListener("click", sendTyped);
+  $("typed").addEventListener("keydown", e => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); sendTyped(); } });
+  $("bigger").addEventListener("click", () => { size = Math.min(140, size + 8); applySize(); store.set("size", size); });
+  $("smaller").addEventListener("click", () => { size = Math.max(24, size - 8); applySize(); store.set("size", size); });
+  $("theme").addEventListener("click", () => { const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; applyTheme(t); store.set("theme", t); });
+  $("full").addEventListener("click", () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else document.documentElement.requestFullscreen?.().catch(() => {});
+  });
+  $("clear").addEventListener("click", () => { clearScreen(); broadcast({ type: "clear" }); });
+  $("pairClose").addEventListener("click", () => { $("pair").hidden = true; });
+  $("linkInfo").addEventListener("click", () => { if (role === "teacher") $("pair").hidden = !$("pair").hidden; });
+  document.addEventListener("keydown", e => {
+    if (!role) return;
+    const tag = document.activeElement?.tagName;
+    if (e.code === "Space" && tag !== "INPUT" && tag !== "BUTTON") { e.preventDefault(); toggleMic(); }
+  });
+
+  // QR로 들어온 경우 (#join-ABCDE)
+  const m = location.hash.match(/^#join-([A-Za-z0-9]{5})$/);
+  if (m) enter("student", m[1]);
+
+  window.__test = { enter, commit, sendPhrase, handleIncoming, render };
+})();
+</script>
+</body>
+</html>
