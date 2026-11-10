@@ -12,7 +12,7 @@
 /* 칠판 화면: 위는 상태·도구, 가운데 큰 번역 자막, 아래는 마이크와 입력 */
 :root{
   --bg:#f4f6f3; --panel:#ffffff; --line:#d5dbd4; --fg:#18231d; --muted:#5d6b62;
-  --accent:#1f7a52; --accent-fg:#ffffff; --live:#c2410c; --chip:#e7ede6; --student:#6d3fc4;
+  --accent:#1f7a52; --accent-fg:#ffffff; --live:#c2410c; --chip:#e7ede6; --student:#6d3fc4; --friend:#b45309;
   --ru-font:"Noto Sans","Noto Sans KR",system-ui,sans-serif;
   --ko-font:"Noto Sans KR","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
   --size:64px;
@@ -20,7 +20,7 @@
 }
 :root[data-theme="dark"]{
   --bg:#13201a; --panel:#1b2b23; --line:#2d4236; --fg:#f1f5ef; --muted:#9fb2a6;
-  --accent:#5fd39a; --accent-fg:#0d1a13; --live:#fb923c; --chip:#243a2e; --student:#c4a5ff;
+  --accent:#5fd39a; --accent-fg:#0d1a13; --live:#fb923c; --chip:#243a2e; --student:#c4a5ff; --friend:#fbbf24;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -106,8 +106,14 @@ footer{padding:12px 20px 16px;padding-bottom:max(16px,env(safe-area-inset-bottom
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 #mic{display:flex;align-items:center;gap:10px;border:0;border-radius:999px;padding:14px 26px;background:var(--accent);color:var(--accent-fg);font-weight:700;font-size:18px}
 #mic.on{background:var(--live)}
+#micFriend{display:flex;align-items:center;gap:10px;border:2px solid var(--friend);border-radius:999px;padding:12px 22px;background:transparent;color:var(--friend);font-weight:700;font-size:18px}
+#micFriend.on{background:var(--friend);color:var(--accent-fg)}
+#micFriend svg{width:22px;height:22px}
+#backTeacher{border:1px solid var(--line);background:transparent;border-radius:999px;padding:8px 14px;font-size:14px;font-family:var(--ru-font)}
+.entry.from-friend .who,.entry.from-friend .main{color:var(--friend)}
 #mic svg{width:22px;height:22px}
-#typed{flex:1;min-width:180px;border:1px solid var(--line);border-radius:999px;padding:13px 20px;background:var(--bg);font-size:17px}
+.inputRow{display:flex;gap:10px;flex:1 1 340px;min-width:0}
+#typed{flex:1;min-width:0;border:1px solid var(--line);border-radius:999px;padding:13px 20px;background:var(--bg);font-size:17px}
 #send{border:1px solid var(--line);border-radius:999px;padding:13px 20px;background:transparent;font-weight:700}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
 .chips button{border:1px solid var(--line);background:var(--chip);border-radius:999px;padding:7px 14px;font-size:15px}
@@ -183,8 +189,13 @@ details[open] summary{margin-bottom:8px}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
       <span id="micLabel">마이크 시작</span>
     </button>
-    <input id="typed" type="text" autocomplete="off">
-    <button id="send">번역</button>
+    <button id="micFriend" aria-pressed="false" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      <span id="micFriendLabel">🇰🇷 친구가 말하기</span>
+    </button>
+    <button id="backTeacher" hidden>← Учителю</button>
+    <div class="inputRow"><input id="typed" type="text" autocomplete="off">
+    <button id="send">번역</button></div>
   </div>
   <details id="phrases">
     <summary id="phrasesSummary">자주 쓰는 말</summary>
@@ -238,7 +249,9 @@ details[open] summary{margin-bottom:8px}
   // 말하는 사람 기준 모드
   const MODES = {
     T: { speaker: "teacher", src: "ko", tgt: "ru", rec: "ko-KR", placeholder: "한국어로 입력하고 Enter", send: "번역", mic: "마이크 시작", micOn: "마이크 끄기", phrases: TEACHER_PHRASES, label: "선생님 → 학생 (미리 번역됨)" },
-    S: { speaker: "student", src: "ru", tgt: "ko", rec: "ru-RU", placeholder: "Напиши по-русски и нажми Enter", send: "Перевести", mic: "Сказать учителю", micOn: "Стоп", phrases: STUDENT_PHRASES, label: "Ученик → учитель · 학생 → 선생님" }
+    // 한국인 친구가 학생 태블릿에서 러시아어 학생에게 말할 때 (교실 큰 화면으로는 보내지 않음)
+    F: { speaker: "friend", src: "ko", tgt: "ru", rec: "ko-KR", mic: "🇰🇷 친구가 말하기", micOn: "■ 멈추기", phrases: [], label: "" },
+    S: { speaker: "student", src: "ru", tgt: "ko", rec: "ru-RU", placeholder: "Напиши по-русски · 친구는 한국어로 써도 돼요", send: "Перевести", mic: "Сказать учителю", micOn: "Стоп", phrases: STUDENT_PHRASES, label: "Ученик → учитель · 학생 → 선생님" }
   };
   let role = null;          // "teacher" | "student"
   let mode = MODES.T;
@@ -381,9 +394,29 @@ details[open] summary{margin-bottom:8px}
     if (save) store.set("tts." + role, ttsOn);
   }
   // 새 문장을 자동으로 읽을지: 학생 태블릿은 선생님 말만, 선생님 화면은 켜 두었을 때 모든 문장(선생님 말=러시아어, 학생 말=한국어)
-  function shouldSpeak(e) { return ttsOn && (role === "teacher" || e.speaker === "teacher"); }
+  // 학생 태블릿의 대화 상대: 선생님(기본) 또는 한국인 친구. 친구와 3분 동안 말이 없으면 선생님으로 돌아감
+  let partner = "teacher", friendUntil = 0;
+  const FRIEND_MS = 3 * 60 * 1000;
+  function talkingToFriend() { return role === "student" && partner === "friend" && Date.now() < friendUntil; }
+  function touchFriend() { partner = "friend"; friendUntil = Date.now() + FRIEND_MS; updatePartnerUI(); }
+  function backToTeacher() { partner = "teacher"; friendUntil = 0; updatePartnerUI(); }
+  function updatePartnerUI() {
+    if (role !== "student") return;
+    if (partner === "friend" && Date.now() >= friendUntil) partner = "teacher";
+    const f = partner === "friend";
+    MODES.S.mic = f ? "Ответить другу" : "Сказать учителю";
+    if (!(listening && mode === MODES.S)) $("micLabel").textContent = MODES.S.mic;
+    $("backTeacher").hidden = !f;
+  }
+  setInterval(updatePartnerUI, 10000);
+  // 학생 태블릿: 선생님·친구 말은 러시아어로, 친구에게 한 대답은 한국어로 읽어 줌
+  function shouldSpeak(e) {
+    if (!ttsOn) return false;
+    if (role === "teacher") return true;
+    return e.speaker === "teacher" || e.speaker === "friend" || e.to === "friend";
+  }
 
-  function mainLang(e) { return role === "student" ? "ru" : (e.speaker === "teacher" ? "ru" : "ko"); }
+  function mainLang(e) { if (role === "student") return e.to === "friend" ? "ko" : "ru"; return e.speaker === "teacher" ? "ru" : "ko"; }
   function render(e, opts = {}) {
     if (seen.has(e.id)) return;
     seen.add(e.id);
@@ -392,9 +425,11 @@ details[open] summary{margin-bottom:8px}
     history.querySelectorAll(".entry.latest").forEach(x => x.classList.remove("latest"));
     const ml = mainLang(e), sl = ml === "ru" ? "ko" : "ru";
     const el = document.createElement("div");
-    el.className = "entry latest" + (e.speaker === "student" ? " from-student" : "");
+    el.className = "entry latest" + (e.speaker === "student" ? " from-student" : "") + (e.speaker === "friend" ? " from-friend" : "");
     const who = document.createElement("div"); who.className = "who";
-    who.textContent = e.speaker === "teacher" ? (role === "student" ? "Учитель · 선생님" : "선생님") : (role === "student" ? "Я · 나" : "학생 · Ученик");
+    who.textContent = e.speaker === "teacher" ? (role === "student" ? "Учитель · 선생님" : "선생님")
+      : e.speaker === "friend" ? "Друг · 친구"
+      : role === "student" ? (e.to === "friend" ? "Я → другу · 나 → 친구" : "Я → учителю · 나 → 선생님") : "학생 · Ученик";
     const m = document.createElement("div"); m.className = "main " + ml; m.textContent = e[ml];
     const s = document.createElement("div"); s.className = "sub " + sl; s.textContent = e[sl];
     { const say = document.createElement("span"); say.className = "say"; say.textContent = "🔊"; say.setAttribute("aria-hidden", "true"); who.append(say); }
@@ -411,7 +446,7 @@ details[open] summary{margin-bottom:8px}
     if (!srcText) { live.hidden = true; $("liveSub").textContent = ""; $("liveMain").textContent = ""; return; }
     live.hidden = false;
     // 진행 중인 말: 원문은 작게, 번역(있으면)은 크게
-    const srcLang = speaker === "teacher" ? "ko" : "ru";
+    const srcLang = (speaker === "teacher" || speaker === "friend") ? "ko" : "ru";
     const tgtLang = srcLang === "ko" ? "ru" : "ko";
     $("liveSub").className = "sub " + srcLang; $("liveSub").textContent = srcText;
     $("liveMain").className = "main " + tgtLang;
@@ -560,7 +595,7 @@ details[open] summary{margin-bottom:8px}
     if (!text) return;
     ++seq;
     showLive("");
-    broadcast({ type: "live", src: "" });
+    if (!(m.speaker === "friend" || talkingToFriend())) broadcast({ type: "live", src: "" });
     let out;
     try { out = await translate(text, m); }
     catch (e) {
@@ -569,13 +604,21 @@ details[open] summary{margin-bottom:8px}
       return;
     }
     const entry = { id: newId(), speaker: m.speaker, [m.src]: text, [m.tgt]: out };
+    if (m.speaker === "friend") { entry.to = "student"; touchFriend(); }
+    else if (m.speaker === "student" && talkingToFriend()) { entry.to = "friend"; touchFriend(); }
+    else entry.to = "teacher";
     render(entry);
-    broadcast({ type: "entry", entry });
-    if (role === "student") setStatus(listening ? "Слушаю · отправлено учителю" : "Отправлено учителю ✓", listening);
+    if (entry.to === "teacher") broadcast({ type: "entry", entry });
+    if (role === "student") {
+      if (entry.to === "teacher") setStatus(listening ? "Слушаю · отправлено учителю" : "Отправлено учителю ✓", listening);
+      else setStatus(m.speaker === "friend" ? "친구의 말을 러시아어로 들려줬어요" : "Сказано другу ✓ · 친구에게 한국어로 들려줬어요", listening);
+    }
     else setStatus(listening ? `듣는 중 · ${engineName}` : `번역 완료 · ${engineName}`, listening);
   }
   function sendPhrase(src, tgt) {
-    const entry = { id: newId(), speaker: mode.speaker, [mode.src]: src, [mode.tgt]: tgt };
+    const m = role === "student" ? MODES.S : mode;
+    const entry = { id: newId(), speaker: m.speaker, [m.src]: src, [m.tgt]: tgt, to: talkingToFriend() ? "friend" : "teacher" };
+    if (entry.to === "friend") { touchFriend(); render(entry); return; }  // 친구에게: 한국어로 읽어 줌(render에서)
     render(entry);
     // 학생이 고른 표현을 러시아어로 들려줘서 맞게 눌렀는지 알 수 있게
     if (role === "student") speak(src, "ru");
@@ -584,10 +627,11 @@ details[open] summary{margin-bottom:8px}
 
   // 말하는 도중 미리보기 (0.9초 간격, 직접 연결된 화면에만 전송)
   let interimText = "", interimTimer = null, interimBusy = false;
+  const isLocalTalk = () => mode.speaker === "friend" || talkingToFriend();
   function scheduleInterim(text) {
     interimText = text;
     showLive(text);
-    broadcast({ type: "live", src: text, speaker: mode.speaker });
+    if (!isLocalTalk()) broadcast({ type: "live", src: text, speaker: mode.speaker });
     if (interimTimer || !text) return;
     interimTimer = setTimeout(async () => {
       interimTimer = null;
@@ -596,7 +640,7 @@ details[open] summary{margin-bottom:8px}
       const snap = interimText, mySeq = seq;
       try {
         const out = await translate(snap);
-        if (seq === mySeq && interimText) { showLive(interimText, out); broadcast({ type: "live", src: interimText, tgt: out, speaker: mode.speaker }); }
+        if (seq === mySeq && interimText) { showLive(interimText, out, mode.speaker); if (!isLocalTalk()) broadcast({ type: "live", src: interimText, tgt: out, speaker: mode.speaker }); }
       } catch {}
       interimBusy = false;
     }, 900);
@@ -636,20 +680,31 @@ details[open] summary{margin-bottom:8px}
     getTranslator(mode.src, mode.tgt).then(t => { engineName = t.name; });
     rec = buildRec(); listening = true;
     try { rec.start(); } catch {}
-    $("mic").classList.add("on"); $("mic").setAttribute("aria-pressed", "true");
-    $("micLabel").textContent = mode.micOn;
-    setStatus(mode.src === "ko" ? "듣는 중 · 한국어로 말씀하세요" : "Слушаю · говори по-русски", true);
+    const f = mode.speaker === "friend";
+    $(f ? "micFriend" : "mic").classList.add("on"); $(f ? "micFriend" : "mic").setAttribute("aria-pressed", "true");
+    $(f ? "micFriendLabel" : "micLabel").textContent = mode.micOn;
+    setStatus(f ? "듣는 중 · 친구야, 한국어로 말해 줘" : mode.src === "ko" ? "듣는 중 · 한국어로 말씀하세요" : (talkingToFriend() ? "Слушаю · говори другу по-русски" : "Слушаю · говори по-русски"), true);
   }
   function stopListening(silent) {
     listening = false;
     try { rec && rec.stop(); } catch {}
-    $("mic").classList.remove("on"); $("mic").setAttribute("aria-pressed", "false");
-    $("micLabel").textContent = mode.mic;
+    for (const id of ["mic", "micFriend"]) { $(id).classList.remove("on"); $(id).setAttribute("aria-pressed", "false"); }
+    $("micFriendLabel").textContent = MODES.F.mic;
+    $("micLabel").textContent = role === "student" ? MODES.S.mic : mode.mic;
     if (interimText) { const t = interimText; interimText = ""; commit(t); }
-    showLive(""); broadcast({ type: "live", src: "" });
+    showLive(""); if (!isLocalTalk()) broadcast({ type: "live", src: "" });
     if (!silent) setStatus(mode.src === "ko" ? "멈춤 · 마이크 버튼(또는 스페이스바)을 누르면 다시 시작해요" : "Нажми кнопку, чтобы сказать учителю", false);
   }
-  const toggleMic = () => listening ? stopListening() : startListening();
+  const toggleMic = () => {
+    // 학생 태블릿에서 친구 마이크가 켜져 있으면 학생 마이크로 바꿈
+    if (role === "student" && mode !== MODES.S) { if (listening) stopListening(true); mode = MODES.S; startListening(); return; }
+    listening ? stopListening() : startListening();
+  };
+  const toggleFriendMic = () => {
+    if (mode === MODES.F && listening) { stopListening(); mode = MODES.S; return; }
+    if (listening) stopListening(true);
+    mode = MODES.F; touchFriend(); startListening();
+  };
 
   // ---------- 모드/역할 ----------
   function renderChips() {
@@ -698,7 +753,8 @@ details[open] summary{margin-bottom:8px}
       $("smaller").title = "Меньше"; $("bigger").title = "Больше";
       if (size > 56) { size = 48; applySize(); }
       setMode("S");
-      setStatus("Нажми кнопку, чтобы сказать учителю", false);
+      $("micFriend").hidden = false;
+      setStatus("Нажми кнопку, чтобы сказать учителю · 친구는 「친구가 말하기」를 눌러요", false);
       setTts(store.get("tts.student", true), false);
       $("phrases").open = true;  // 그림 버튼은 처음부터 펼쳐 둠
       // 태블릿은 화면을 한 번 눌러야 소리를 낼 수 있어서 처음에 큰 버튼을 보여 줌
@@ -719,9 +775,16 @@ details[open] summary{margin-bottom:8px}
   $("joinCode").addEventListener("keydown", e => { if (e.key === "Enter") tryJoin(); });
 
   $("mic").addEventListener("click", toggleMic);
+  $("micFriend").addEventListener("click", toggleFriendMic);
+  $("backTeacher").addEventListener("click", () => { if (listening && mode === MODES.F) { stopListening(true); mode = MODES.S; } backToTeacher(); setStatus("Нажми кнопку, чтобы сказать учителю", false); });
   $("modeT").addEventListener("click", () => setMode("T"));
   $("modeS").addEventListener("click", () => setMode("S"));
-  const sendTyped = () => { const v = $("typed").value; $("typed").value = ""; commit(v); };
+  const sendTyped = () => {
+    const v = $("typed").value; $("typed").value = "";
+    // 학생 태블릿: 한글이 들어 있으면 친구가 쓴 말로 처리
+    if (role === "student" && /[\uAC00-\uD7A3\u3131-\u318E]/.test(v)) commit(v, MODES.F);
+    else commit(v, role === "student" ? MODES.S : mode);
+  };
   $("send").addEventListener("click", sendTyped);
   $("typed").addEventListener("keydown", e => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); sendTyped(); } });
   $("bigger").addEventListener("click", () => { size = Math.min(140, size + 8); applySize(); store.set("size", size); });
