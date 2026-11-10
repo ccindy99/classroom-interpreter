@@ -247,17 +247,19 @@ details[open] summary{margin-bottom:8px}
   // ---------- 번역 ----------
   const translators = {};
   let engineName = "";
+  // 정해진 시간 안에 끝나지 않으면 실패로 처리 (일부 브라우저에서 내장 번역기가 응답 없이 멈춤)
+  const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
   async function chromeTranslator(src, tgt) {
     if (!("Translator" in self)) return null;
     try {
-      const avail = await Translator.availability({ sourceLanguage: src, targetLanguage: tgt });
+      const avail = await withTimeout(Translator.availability({ sourceLanguage: src, targetLanguage: tgt }), 3000);
       if (avail === "unavailable") return null;
       if (avail !== "available") setStatus("번역 언어팩 내려받는 중… (처음 한 번만)", false);
-      const t = await Translator.create({
+      const t = await withTimeout(Translator.create({
         sourceLanguage: src, targetLanguage: tgt,
         monitor(m) { m.addEventListener("downloadprogress", e => setStatus(`언어팩 내려받는 중… ${Math.round((e.loaded || 0) * 100)}%`, false)); }
-      });
-      return { name: "크롬 내장 번역", run: s => t.translate(s) };
+      }), avail === "available" ? 5000 : 60000);
+      return { name: "크롬 내장 번역", run: s => withTimeout(t.translate(s), 6000) };
     } catch (e) { console.warn("Translator API", e); return null; }
   }
   async function googleRun(s, src, tgt) {
@@ -276,7 +278,9 @@ details[open] summary{margin-bottom:8px}
     const key = src + ">" + tgt;
     if (translators[key]) return translators[key];
     const c = await chromeTranslator(src, tgt);
-    translators[key] = c || { name: "온라인 번역", run: async s => { try { return await googleRun(s, src, tgt); } catch { return await myMemoryRun(s, src, tgt); } } };
+    const online = async s => { try { return await googleRun(s, src, tgt); } catch { return await myMemoryRun(s, src, tgt); } };
+    // 내장 번역기가 실패하거나 멈추면 그 문장은 온라인 번역으로
+    translators[key] = c ? { name: c.name, run: s => c.run(s).catch(() => online(s)) } : { name: "온라인 번역", run: online };
     return translators[key];
   }
   async function translate(text, m = mode) {
